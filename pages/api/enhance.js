@@ -1,5 +1,6 @@
 import formidable from "formidable";
 import sharp from "sharp";
+import fs from "fs/promises";
 
 export const config = {
   api: {
@@ -11,9 +12,10 @@ export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
   }
+
   try {
     const { files } = await new Promise((resolve, reject) => {
-      const form = formidable({ multiples: false });
+      const form = formidable({ multiples: false, keepExtensions: true });
       form.parse(req, (err, fields, files) => {
         if (err) reject(err);
         else resolve({ fields, files });
@@ -24,13 +26,15 @@ export default async function handler(req, res) {
     if (!file) {
       return res.status(400).json({ error: "no_file_uploaded" });
     }
+
     const f = Array.isArray(file) ? file[0] : file;
     const filepath = f.filepath || f.path;
-    if (!filepath) {
-      return res.status(400).json({ error: "invalid_upload" });
-    }
 
-    const enhanced = await sharp(filepath, { failOn: false })
+    // ✅ Read the uploaded file into a buffer (instead of relying on path alone)
+    const buffer = await fs.readFile(filepath);
+
+    // Process with Sharp
+    const enhanced = await sharp(buffer, { failOn: false })
       .rotate()
       .normalize()
       .gamma(1.05)
@@ -44,6 +48,9 @@ export default async function handler(req, res) {
     res.setHeader("Content-Disposition", "attachment; filename=enhanced.jpg");
     return res.status(200).send(enhanced);
   } catch (err) {
-    return res.status(500).json({ error: "enhancement_failed", detail: err?.message || "unknown_error" });
+    console.error("Enhance error", err);
+    return res
+      .status(500)
+      .json({ error: "enhancement_failed", detail: err.message || "unknown_error" });
   }
 }
